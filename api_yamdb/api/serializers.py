@@ -2,6 +2,7 @@ import random
 import datetime
 
 from django.db.models import Avg
+from django.shortcuts import get_object_or_404
 from rest_framework import serializers
 from rest_framework.validators import UniqueTogetherValidator
 
@@ -95,13 +96,18 @@ class ReviewSerializer(serializers.ModelSerializer):
         fields = '__all__'
         model = Review
         read_only_fields = ('title',)
-        validators = [
-            UniqueTogetherValidator(
-                queryset=Review.objects.all(),
-                fields=('author', 'title'),
-                message='Вы уже оставили отзыв!',
+        
+    def validate(self, data):
+        title_id = self.context['view'].kwargs.get('title_id')
+        author = self.context.get('request').user
+        title = get_object_or_404(Title, id=title_id)
+        if (title.reviews.filter(author=author).exists()
+           and self.context.get('request').method != 'PATCH'):
+            raise serializers.ValidationError(
+                'Можно оставлять только один отзыв!'
             )
-        ]
+        return data
+
 
 
 class CategorySerializer(serializers.ModelSerializer):
@@ -147,9 +153,9 @@ class TitleSerializer(serializers.ModelSerializer):
     rating = serializers.SerializerMethodField()
 
     def get_rating(self, obj):
-        if not Review.objects.filter(title=obj.pk).exists():
+        if not Review.objects.filter(title=obj.id).exists():
             return None
-        return Review.objects.filter(title=obj.pk).aggregate(Avg('score'))
+        return Review.objects.filter(title=obj.id).aggregate(Avg('score'))
 
     class Meta:
         model = Title
